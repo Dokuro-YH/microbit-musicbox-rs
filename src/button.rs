@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use defmt::Format;
-use embedded_hal::digital::v2::InputPin;
+use embedded_hal::digital::InputPin;
 use fugit::{ExtU64, TimerDurationU64, TimerInstantU64};
 
 #[derive(Debug, Format, Clone, Copy, PartialEq, Eq)]
@@ -80,16 +80,17 @@ where
     pub fn tick(&mut self) {
         use State::*;
 
+        self.time += TimerDurationU64::from_ticks(1);
+
         let active = self.pin.is_low().unwrap();
-        let now = self.now();
-        let wait_time = now - self.start_time;
+        let wait_time = self.time - self.start_time;
 
         match self.state {
             Pending => {
                 if active {
                     self.update_state(Down);
                     self.cnt_click = 0;
-                    self.start_time = now;
+                    self.start_time = self.time;
                 }
             }
             Down => {
@@ -109,7 +110,7 @@ where
             Count => {
                 if active {
                     self.update_state(Down);
-                    self.start_time = now;
+                    self.start_time = self.time;
                 } else if wait_time > self.click_ms {
                     self.attach_event_fn.map(|f| {
                         f(match self.cnt_click {
@@ -124,7 +125,7 @@ where
             Press => {
                 if !active {
                     self.update_state(Pressend);
-                    self.start_time = now;
+                    self.start_time = self.time;
                 } else {
                     self.attach_event_fn.map(|f| f(Event::LongPressDuring));
                 }
@@ -145,14 +146,6 @@ where
         self.cnt_click = 0;
         self.time = TimerInstantU64::from_ticks(0);
         self.start_time = TimerInstantU64::from_ticks(0);
-    }
-
-    #[inline]
-    fn now(&mut self) -> TimerInstantU64<TIMER_HZ> {
-        if self.state != State::Pending {
-            self.time += TimerDurationU64::from_ticks(1);
-        }
-        self.time
     }
 
     #[inline]

@@ -5,10 +5,12 @@ extern crate microbit as bsp; // board support package
 
 use defmt_rtt as _; // global logger
 use panic_probe as _; // panic handler
+use rtic_monotonics::nrf::timer::prelude::*;
+nrf_timer0_monotonic!(Mono, 1_000_000);
 
+mod accel;
 mod button;
 mod melody;
-mod mono;
 mod player;
 mod tone;
 
@@ -19,15 +21,15 @@ mod app {
     use bsp::hal::clocks::Clocks;
     use bsp::hal::gpio::{Input, Pin, PullUp};
     use bsp::hal::rtc::{Rtc, RtcInterrupt};
-    use bsp::pac::{PWM1, RTC0, TIMER1, TIMER2};
+    use bsp::hal::twim;
+    use bsp::pac::twim0::frequency::FREQUENCY_A;
+    use bsp::pac::{PWM1, RTC0, TIMER1, TIMER2, TWIM0};
     use bsp::Board;
 
+    type Accel = accel::Accel<twim::Twim<TWIM0>, 100>;
     type Button = button::Button<Pin<Input<PullUp>>, 100>;
-    type Player = player::Player<'static, TIMER1, PWM1>;
-    type Display = bsp::display::nonblocking::Display<TIMER2>;
-
-    #[monotonic(binds = TIMER0, default = true)]
-    type Mono = mono::MonoTimer<bsp::pac::TIMER0>;
+    type Display = bsp::display::nonblocking::Display<TIMER1>;
+    type Player = player::Player<'static, TIMER2, PWM1>;
 
     const MELODY_LIST: &[melody::Melody] = &[
         melody::SUPER_MARIOBROS,
@@ -38,10 +40,11 @@ mod app {
 
     #[shared]
     struct Shared {
-        display: Display,
-        player: Player,
+        accel: Accel,
         btn1: Button,
         btn2: Button,
+        display: Display,
+        player: Player,
     }
 
     #[local]
@@ -50,11 +53,14 @@ mod app {
     }
 
     #[init]
-    fn init(ctx: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(ctx: init::Context) -> (Shared, Local) {
         defmt::info!("init musicbox");
 
+        // Create board
         let board = Board::new(ctx.device, ctx.core);
-        let mono = mono::MonoTimer::new(board.TIMER0);
+
+        // Initialize Monotonic
+        Mono::start(board.TIMER0);
 
         // Starting the low-frequency clock (needed for RTC to work)
         Clocks::new(board.CLOCK).start_lfclk();
@@ -66,21 +72,12 @@ mod app {
         rtc0.enable_interrupt(RtcInterrupt::Tick, None);
         rtc0.enable_counter();
 
-        // Display
-        let display = {
-            let pins = board.display_pins;
-            Display::new(board.TIMER2, pins)
-        };
-
-        // Player
-        let player = {
-            let pin = board
-                .speaker_pin
-                .into_push_pull_output(bsp::hal::gpio::Level::High)
-                .degrade();
-            let mut ply = Player::new(board.TIMER1, board.PWM1, pin, MELODY_LIST);
-            ply.play();
-            ply
+        // accel
+        let i2c = twim::Twim::new(board.TWIM0, board.i2c_internal.into(), FREQUENCY_A::K100);
+        let accel = {
+            let mut accel = Accel::new_with_i2c(i2c);
+            accel.init();
+            accel
         };
 
         // Button A
@@ -103,39 +100,45 @@ mod app {
             btn
         };
 
+        // Display
+        let display = {
+            let pins = board.display_pins;
+            Display::new(board.TIMER1, pins)
+        };
+
+        // Player
+        let player = {
+            let pin = board
+                .speaker_pin
+                .into_push_pull_output(bsp::hal::gpio::Level::High)
+                .degrade();
+            let mut ply = Player::new(board.TIMER2, board.PWM1, pin, MELODY_LIST);
+            ply.play();
+            ply
+        };
+
         (
             Shared {
+                accel,
                 btn1,
                 btn2,
-                player,
                 display,
+                player,
             },
             Local { rtc0 },
-            init::Monotonics(mono),
         )
     }
 
-    #[task(priority = 1, binds = RTC0, local = [rtc0], shared = [player, btn1, btn2])]
+    #[task(binds = RTC0, local = [rtc0], shared = [player, btn1, btn2, accel])]
     fn rtc0(mut ctx: rtc0::Context) {
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
+        ctx.shared.accel.lock(|accel| accel.tick());
         ctx.shared.btn1.lock(|btn| btn.tick());
         ctx.shared.btn2.lock(|btn| btn.tick());
     }
 
-    #[task(priority = 2, binds = TIMER1, shared = [player])]
-    fn timer1(mut ctx: timer1::Context) {
-        ctx.shared.player.lock(|ply| ply.handle_play_event());
-    }
-
-    #[task(priority = 3, binds = TIMER2, shared = [display])]
-    fn timer2(mut ctx: timer2::Context) {
-        ctx.shared
-            .display
-            .lock(|display| display.handle_display_event());
-    }
-
-    #[task(shared = [player, display])]
-    fn handle_btn1_event(mut ctx: handle_btn1_event::Context, event: button::Event) {
+    #[task(priority = 1, shared = [player])]
+    async fn handle_btn1_event(mut ctx: handle_btn1_event::Context, event: button::Event) {
         use button::Event::*;
 
         defmt::debug!("btn1 event: {:?}", &event);
@@ -147,8 +150,8 @@ mod app {
         })
     }
 
-    #[task(shared = [player])]
-    fn handle_btn2_event(mut ctx: handle_btn2_event::Context, event: button::Event) {
+    #[task(priority = 1, shared = [player])]
+    async fn handle_btn2_event(mut ctx: handle_btn2_event::Context, event: button::Event) {
         use button::Event::*;
 
         defmt::debug!("btn2 event: {:?}", &event);
@@ -158,6 +161,18 @@ mod app {
             DoubleClick => ply.next(),
             _ => {}
         })
+    }
+
+    #[task(priority = 3, binds = TIMER1, shared = [display])]
+    fn handle_display_event(mut ctx: handle_display_event::Context) {
+        ctx.shared
+            .display
+            .lock(|display| display.handle_display_event());
+    }
+
+    #[task(priority = 2, binds = TIMER2, shared = [player])]
+    fn handle_player_event(mut ctx: handle_player_event::Context) {
+        ctx.shared.player.lock(|ply| ply.handle_play_event());
     }
 
     #[idle]

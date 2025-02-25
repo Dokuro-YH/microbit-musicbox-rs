@@ -1,5 +1,3 @@
-use core::cmp;
-
 use bsp::hal::{
     gpio::{Output, Pin, PushPull},
     pwm, timer,
@@ -189,7 +187,7 @@ mod inner {
             self.0.disable();
             if tone != Tone::REST {
                 self.0.set_period(tone.hz());
-                self.update_volume(volume);
+                self.set_volume(volume);
                 self.0.enable();
             }
         }
@@ -199,12 +197,21 @@ mod inner {
         }
 
         #[inline(always)]
-        fn update_volume(&self, volume: u32) {
+        fn set_volume(&self, volume: u32) {
+            // 确保音量在0-100范围内
+            let volume = volume.clamp(0, 100) as f32;
+
+            // 获取最大占空比
             let max_duty = self.0.max_duty() as f32;
-            let min_vol = max_duty * 0.2;
+
+            // 计算目标占空比
             let max_vol = max_duty * 0.5;
-            let vol = (max_vol - min_vol) * (volume as f32 / 100_f32);
-            self.0.set_duty_on(pwm::Channel::C0, (min_vol + vol) as u16);
+            let min_vol = max_duty * 0.2;
+            let vol_range = max_vol - min_vol;
+            let target_duty = min_vol + (vol_range * (volume / 100.0));
+
+            // 设置PWM占空比
+            self.0.set_duty_on(pwm::Channel::C0, target_duty as u16);
         }
     }
 
