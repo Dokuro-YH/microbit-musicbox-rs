@@ -24,8 +24,7 @@ This music player supports various operations with the buttons and the accelerom
 Make sure you have the latest versions (`cargo install <tool>`) of these tools:
 
 * `flip-link`
-* `probe-run`
-* `cargo-embed`
+* `probe-rs-tools`
 
 ## Usage
 
