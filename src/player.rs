@@ -33,9 +33,16 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         Self {
             list,
             state: State::Stop,
-            volume: 100,
+            volume: 30,
             timer,
             buzzer,
+        }
+    }
+
+    pub fn is_playing(&self) -> bool {
+        match self.state {
+            State::Play { .. } => true,
+            _ => false,
         }
     }
 
