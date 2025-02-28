@@ -33,7 +33,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         Self {
             list,
             state: State::Stop,
-            volume: 30,
+            volume: 50,
             timer,
             buzzer,
         }
@@ -63,24 +63,11 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         self.list = list;
     }
 
-    pub fn stop(&mut self) {
-        self.timer.stop();
-        self.buzzer.stop();
-        self.state = State::Stop;
-    }
-
-    pub fn play(&mut self) {
-        if let Some(next_state) = match self.state {
-            State::Stop => Some(State::Play {
-                pos: 0,
-                progress: 0,
-            }),
-            State::Pause { pos, progress } => Some(State::Play { pos, progress }),
-            _ => None,
-        } {
-            self.state = next_state;
-            self.timer.start();
-            self.timer.set_play_duration(DEFAULT_PLAY_DURATION);
+    pub fn play_or_resume(&mut self) {
+        match self.state {
+            State::Stop => self.start(0, 0),
+            State::Pause { pos, progress } => self.start(pos, progress),
+            _ => {}
         }
     }
 
@@ -95,14 +82,18 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         }
     }
 
+    /// 下一曲
     pub fn next(&mut self) {
-        let next_pos = self.next_pos();
-        self._start_play(next_pos);
+        let next_pos = self.get_next_pos();
+        self.stop();
+        self.start(next_pos, 0);
     }
 
+    /// 上一曲
     pub fn prev(&mut self) {
-        let prev_pos = self.prev_pos();
-        self._start_play(prev_pos);
+        let prev_pos = self.get_prev_pos();
+        self.stop();
+        self.start(prev_pos, 0);
     }
 
     pub fn handle_play_event(&mut self) {
@@ -121,7 +112,8 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
                         timer.set_play_duration((delay_ms * 1_000).micros());
                         timer.set_next_duration((delay_ms * 900).micros());
                     } else {
-                        self._start_play(pos);
+                        self.stop();
+                        self.start(pos, 0);
                     }
                 } else if next_fired {
                     self.state = State::Play {
@@ -134,7 +126,8 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         }
     }
 
-    fn prev_pos(&self) -> usize {
+    /// 上一曲下标，列表循环
+    fn get_prev_pos(&self) -> usize {
         let max_pos = self.list.len() - 1;
         let pos = match self.state {
             State::Play { pos, .. } => pos,
@@ -149,7 +142,8 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         }
     }
 
-    fn next_pos(&self) -> usize {
+    /// 获取下一曲下标，列表循环
+    fn get_next_pos(&self) -> usize {
         let max_pos = self.list.len() - 1;
         let pos = match self.state {
             State::Play { pos, .. } => pos,
@@ -164,14 +158,16 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         }
     }
 
-    fn _start_play(&mut self, pos: usize) {
-        self.stop();
-        self.state = State::Play {
-            pos: pos,
-            progress: 0,
-        };
+    fn start(&mut self, pos: usize, progress: usize) {
+        self.state = State::Play { pos, progress };
         self.timer.start();
         self.timer.set_play_duration(DEFAULT_PLAY_DURATION);
+    }
+
+    fn stop(&mut self) {
+        self.timer.stop();
+        self.buzzer.stop();
+        self.state = State::Stop;
     }
 }
 

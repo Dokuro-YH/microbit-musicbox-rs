@@ -20,7 +20,6 @@ pub struct Button<PIN, const TIMER_HZ: u32> {
     last_state: State,
     cnt_click: u32,
     attach_event_fn: Option<fn(Event)>,
-    time: TimerInstantU64<TIMER_HZ>,
     start_time: TimerInstantU64<TIMER_HZ>,
     debounce_ms: TimerDurationU64<TIMER_HZ>,
     click_ms: TimerDurationU64<TIMER_HZ>,
@@ -49,7 +48,6 @@ where
             last_state: State::Pending,
             cnt_click: 0,
             attach_event_fn: None,
-            time: TimerInstantU64::from_ticks(0),
             start_time: TimerInstantU64::from_ticks(0),
             debounce_ms: 50.millis(),
             click_ms: 200.millis(),
@@ -77,20 +75,18 @@ where
         self.pin
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self, time: &TimerInstantU64<TIMER_HZ>) {
         use State::*;
 
-        self.time += TimerDurationU64::from_ticks(1);
-
         let active = self.pin.is_low().unwrap();
-        let wait_time = self.time - self.start_time;
+        let wait_time = *time - self.start_time;
 
         match self.state {
             Pending => {
                 if active {
                     self.update_state(Down);
                     self.cnt_click = 0;
-                    self.start_time = self.time;
+                    self.start_time = *time;
                 }
             }
             Down => {
@@ -110,7 +106,7 @@ where
             Count => {
                 if active {
                     self.update_state(Down);
-                    self.start_time = self.time;
+                    self.start_time = *time;
                 } else if wait_time > self.click_ms {
                     self.attach_event_fn.map(|f| {
                         f(match self.cnt_click {
@@ -125,7 +121,7 @@ where
             Press => {
                 if !active {
                     self.update_state(Pressend);
-                    self.start_time = self.time;
+                    self.start_time = *time;
                 } else {
                     self.attach_event_fn.map(|f| f(Event::LongPressDuring));
                 }
@@ -144,7 +140,6 @@ where
         self.state = State::Pending;
         self.last_state = State::Pending;
         self.cnt_click = 0;
-        self.time = TimerInstantU64::from_ticks(0);
         self.start_time = TimerInstantU64::from_ticks(0);
     }
 
