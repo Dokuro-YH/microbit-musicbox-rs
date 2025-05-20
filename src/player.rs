@@ -33,7 +33,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         Self {
             list,
             state: State::Stop,
-            volume: 50,
+            volume: 20,
             timer,
             buzzer,
         }

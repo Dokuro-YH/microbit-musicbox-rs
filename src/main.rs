@@ -89,9 +89,9 @@ mod app {
                 .unwrap();
             let mut accel = accel::Accel::new(sencer);
 
-            accel.attach_snake_event(|| {
-                defmt::debug!("snake event");
-                handle_snake_event::spawn().ok();
+            accel.attach_shake_event(|| {
+                defmt::debug!("shake event");
+                handle_shake_event::spawn().ok();
             });
 
             accel
@@ -156,7 +156,7 @@ mod app {
     }
 
     #[task(priority = 1, shared = [player])]
-    async fn handle_snake_event(mut ctx: handle_snake_event::Context) {
+    async fn handle_shake_event(mut ctx: handle_shake_event::Context) {
         ctx.shared.player.lock(|ply| {
             if ply.is_playing() {
                 defmt::info!("music paused");
