@@ -2,15 +2,10 @@ use bsp::hal::{
     gpio::{Output, Pin, PushPull},
     pwm, timer,
 };
-use fugit::ExtU32;
+use fugit::{ExtU32, TimerDurationU32, TimerInstantU32};
 
 use self::inner::{PlayerBuzzer, PlayerTimer};
 use crate::{melody::Melody, tone::Tone};
-
-type Instant = fugit::Instant<u32, 1, 1_000_000>;
-type Duration = fugit::Duration<u32, 1, 1_000_000>;
-
-const DEFAULT_PLAY_DURATION: Duration = Duration::from_ticks(1 * 1000 * 1000);
 
 enum State {
     Play { pos: usize, progress: usize },
@@ -116,16 +111,12 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
                         self.start(pos, 0);
                     }
                 } else if next_fired {
-                    self.state = State::Play {
-                        pos,
-                        progress: progress + 1,
-                    };
-                    self.buzzer.stop();
+                    self.next_tone(pos, progress);
                 }
             }
         }
     }
-
+    
     /// 上一曲下标，列表循环
     fn get_prev_pos(&self) -> usize {
         let max_pos = self.list.len() - 1;
@@ -158,21 +149,31 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
         }
     }
 
+    fn next_tone(&mut self, pos: usize, progress: usize) {
+        self.buzzer.stop();
+        self.state = State::Play {
+            pos,
+            progress: progress + 1,
+        };
+    }
+
     fn start(&mut self, pos: usize, progress: usize) {
         self.state = State::Play { pos, progress };
         self.timer.start();
-        self.timer.set_play_duration(DEFAULT_PLAY_DURATION);
+        self.timer.set_play_duration(1.secs());
     }
 
     fn stop(&mut self) {
-        self.timer.stop();
         self.buzzer.stop();
+        self.timer.stop();
         self.state = State::Stop;
     }
 }
 
 mod inner {
     use super::*;
+    type Instant = TimerInstantU32<1_000_000>;
+    type Duration = TimerDurationU32<1_000_000>;
 
     pub(super) struct PlayerBuzzer<T: pwm::Instance>(pwm::Pwm<T>);
 
@@ -187,8 +188,10 @@ mod inner {
         }
 
         pub fn tone(&self, tone: Tone, volume: u32) {
-            self.0.disable();
-            if tone != Tone::REST {
+            if tone == Tone::REST {
+                self.0.disable();
+            } else {
+                self.0.disable();
                 self.0.set_period(tone.hz());
                 self.set_volume(volume);
                 self.0.enable();
