@@ -94,7 +94,7 @@ where
                     self.update_state(Up);
                 } else if active && wait_time > self.press_ms {
                     self.update_state(Press);
-                    self.attach_event_fn.map(|f| f(Event::LongPressStart));
+                    if let Some(f) = self.attach_event_fn { f(Event::LongPressStart) }
                 }
             }
             Up => {
@@ -108,13 +108,11 @@ where
                     self.update_state(Down);
                     self.start_time = *time;
                 } else if wait_time > self.click_ms {
-                    self.attach_event_fn.map(|f| {
-                        f(match self.cnt_click {
+                    if let Some(f) = self.attach_event_fn { f(match self.cnt_click {
                             1 => Event::Click,
                             2 => Event::DoubleClick,
                             cnt => Event::MultiClick(cnt),
-                        })
-                    });
+                        }) }
                     self.reset();
                 }
             }
@@ -123,12 +121,12 @@ where
                     self.update_state(Pressend);
                     self.start_time = *time;
                 } else {
-                    self.attach_event_fn.map(|f| f(Event::LongPressDuring));
+                    if let Some(f) = self.attach_event_fn { f(Event::LongPressDuring) }
                 }
             }
             Pressend => {
                 if !active && wait_time > self.debounce_ms {
-                    self.attach_event_fn.map(|f| f(Event::LongPressStop));
+                    if let Some(f) = self.attach_event_fn { f(Event::LongPressStop) }
                     self.reset();
                 }
             }

@@ -11,7 +11,7 @@ pub struct Melody {
 impl Melody {
     pub fn get(&self, pos: usize) -> Option<(Tone, u32)> {
         self.notes.get(pos).cloned().map(|(note, div)| {
-            let dotted = if div > 0 { false } else { true };
+            let dotted = div <= 0;
             let div = div.abs() as f32;
             let delay_ms = self.whole_note_delay_ms as f32 / div;
             (note, if dotted { delay_ms * 1.5 } else { delay_ms } as u32)
