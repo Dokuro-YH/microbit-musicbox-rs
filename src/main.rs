@@ -151,12 +151,11 @@ mod app {
 
     #[task(binds = RTC0, local = [rtc0], shared = [accel, btn1, btn2, display])]
     fn rtc0(mut ctx: rtc0::Context) {
-        let now = Mono::now();
+        let now_ms = Mono::now().duration_since_epoch().ticks() / 1000;
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
-        ctx.shared.accel.lock(|accel| accel.tick(&now));
-        ctx.shared.btn1.lock(|btn| btn.tick(&now));
-        ctx.shared.btn2.lock(|btn| btn.tick(&now));
-        let now_ms = now.duration_since_epoch().ticks() / 1000;
+        ctx.shared.accel.lock(|accel| accel.tick(now_ms));
+        ctx.shared.btn1.lock(|btn| btn.tick(now_ms));
+        ctx.shared.btn2.lock(|btn| btn.tick(now_ms));
         ctx.shared.display.lock(|d| d.update(now_ms, None));
     }
 

@@ -1,4 +1,3 @@
-use fugit::TimerInstantU64;
 use lsm303agr::interface::I2cInterface;
 use lsm303agr::mode::MagOneShot;
 use lsm303agr::{Acceleration, Lsm303agr};
@@ -31,13 +30,10 @@ impl<T: embedded_hal::i2c::I2c, const TIMER_HZ: u32> Accel<T, TIMER_HZ> {
     }
 
     /// 每帧 tick：读取传感器 → 喂入功能核心 → 触发回调
-    pub fn tick(&mut self, now: &TimerInstantU64<TIMER_HZ>) {
+    pub fn tick(&mut self, now_ms: u64) {
         let Some(accel) = self.accel_new_data() else {
             return;
         };
-
-        // 将 timer ticks 转换为毫秒
-        let now_ms = now.duration_since_epoch().ticks() / (TIMER_HZ as u64 / 1000);
 
         if self
             .detector

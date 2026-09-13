@@ -1,7 +1,7 @@
 use core::fmt::Debug;
 
 use embedded_hal::digital::InputPin;
-use fugit::{TimerDurationU64, TimerInstantU64};
+use fugit::TimerDurationU64;
 
 use musicbox::button_detector::ButtonDetector;
 pub use musicbox::button_detector::ButtonEvent as Event;
@@ -47,9 +47,8 @@ where
         self.pin
     }
 
-    pub fn tick(&mut self, time: &TimerInstantU64<TIMER_HZ>) {
+    pub fn tick(&mut self, now_ms: u64) {
         let active = self.pin.is_low().unwrap();
-        let now_ms = time.duration_since_epoch().ticks() / (TIMER_HZ as u64 / 1000);
 
         if let Some(event) = self.detector.update(now_ms, active) {
             if let Some(f) = self.attach_event_fn {
