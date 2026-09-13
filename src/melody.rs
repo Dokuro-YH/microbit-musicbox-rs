@@ -1,11 +1,10 @@
-use defmt::Format;
-
 use crate::tone::Tone;
 
-#[derive(Format, Debug)]
+#[cfg_attr(target_os = "none", derive(defmt::Format))]
+#[derive(Debug)]
 pub struct Melody {
-    whole_note_delay_ms: u32,
-    notes: &'static [(Tone, i8)],
+    pub(crate) whole_note_delay_ms: u32,
+    pub(crate) notes: &'static [(Tone, i8)],
 }
 
 impl Melody {
@@ -23,6 +22,7 @@ impl Melody {
     }
 }
 
+#[rustfmt::skip]
 macro_rules! melody {
     (
         name = $name:ident,

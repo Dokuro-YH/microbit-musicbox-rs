@@ -1,11 +1,12 @@
-use bsp::hal::time::Hertz;
-use defmt::Format;
+#[cfg(target_os = "none")]
+use microbit::hal::time::Hertz;
 
 macro_rules! tones {
     (
         $($key:ident: $freq:expr),+
     ) => {
-        #[derive(Format, Debug, Clone, Copy, PartialEq, Eq)]
+        #[cfg_attr(target_os = "none", derive(defmt::Format))]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum Tone {
             $(
                 $key,
@@ -13,6 +14,7 @@ macro_rules! tones {
         }
 
         impl Tone {
+            #[cfg(target_os = "none")]
             pub fn hz(&self) -> Hertz {
                 match *self {
                     $(Tone::$key => Hertz($freq),)*

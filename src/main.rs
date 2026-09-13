@@ -14,9 +14,7 @@ nrf_timer0_monotonic!(Mono, TIMER_HZ);
 mod accel;
 mod button;
 mod display;
-mod melody;
 mod player;
-mod tone;
 
 #[rtic::app(device = bsp::pac, peripherals = true, dispatchers = [SWI0_EGU0])]
 mod app {
@@ -40,11 +38,11 @@ mod app {
     type Display = display::Display<TIMER1>;
     type Player = player::Player<'static, TIMER2, PWM1>;
 
-    const MELODY_LIST: &[melody::Melody] = &[
-        melody::SUPER_MARIOBROS,
-        melody::GAME_OF_THRONES,
-        melody::MERRY_CHRISTMAS,
-        melody::HAPPY_BIRTHDAY,
+    const MELODY_LIST: &[musicbox::melody::Melody] = &[
+        musicbox::melody::SUPER_MARIOBROS,
+        musicbox::melody::GAME_OF_THRONES,
+        musicbox::melody::MERRY_CHRISTMAS,
+        musicbox::melody::HAPPY_BIRTHDAY,
     ];
 
     #[shared]

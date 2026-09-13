@@ -2,176 +2,130 @@ use bsp::hal::{
     gpio::{Output, Pin, PushPull},
     pwm, timer,
 };
-use fugit::{ExtU32, TimerDurationU32, TimerInstantU32};
+use fugit::ExtU32;
+
+use musicbox::{
+    melody::Melody,
+    player_core::{PlayerEffect, PlayerModel},
+    tone::Tone,
+};
 
 use self::inner::{PlayerBuzzer, PlayerTimer};
-use crate::{melody::Melody, tone::Tone};
 
-enum State {
-    Play { pos: usize, progress: usize },
-    Pause { pos: usize, progress: usize },
-    Stop,
-}
-
+/// Imperative Shell：封装蜂鸣器 PWM 和硬件定时器。
+/// 播放状态机委托给功能核心 [`PlayerModel`]。
 pub struct Player<'a, T: timer::Instance, P: pwm::Instance> {
-    list: &'a [Melody],
-    state: State,
-    volume: u32,
+    model: PlayerModel<'a>,
     timer: PlayerTimer<T>,
     buzzer: PlayerBuzzer<P>,
 }
 
 impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
     pub fn new(timer: T, pwm: P, pin: Pin<Output<PushPull>>, list: &'a [Melody]) -> Self {
-        let timer = PlayerTimer::new(timer);
-        let buzzer = PlayerBuzzer::new(pwm, pin);
         Self {
-            list,
-            state: State::Stop,
-            volume: 20,
-            timer,
-            buzzer,
+            model: PlayerModel::new(list),
+            timer: PlayerTimer::new(timer),
+            buzzer: PlayerBuzzer::new(pwm, pin),
         }
     }
+
+    // ── 查询 ──
 
     pub fn is_playing(&self) -> bool {
-        match self.state {
-            State::Play { .. } => true,
-            _ => false,
-        }
-    }
-
-    pub fn volume_add(&mut self, volume: u32) {
-        self.volume = self.volume.saturating_add(volume).min(100);
-    }
-
-    pub fn volume_sub(&mut self, volume: u32) {
-        self.volume = self.volume.saturating_sub(volume);
+        self.model.is_playing()
     }
 
     pub fn volume(&self) -> u32 {
-        self.volume
+        self.model.volume()
+    }
+
+    // ── 对外命令 → 委托 model → apply ──
+
+    pub fn volume_add(&mut self, volume: u32) {
+        self.model.volume_add(volume);
+    }
+
+    pub fn volume_sub(&mut self, volume: u32) {
+        self.model.volume_sub(volume);
     }
 
     pub fn set_list(&mut self, list: &'a [Melody]) {
-        self.stop();
-        self.list = list;
+        let effect = self.model.set_list(list);
+        self.apply(effect);
     }
 
     pub fn play_or_resume(&mut self) {
-        match self.state {
-            State::Stop => self.start(0, 0),
-            State::Pause { pos, progress } => self.start(pos, progress),
-            _ => {}
-        }
+        let effect = self.model.play_or_resume();
+        self.apply(effect);
     }
 
     pub fn pause(&mut self) {
-        if let Some(next_state) = match self.state {
-            State::Play { pos, progress } => Some(State::Pause { pos, progress }),
-            _ => None,
-        } {
-            self.timer.stop();
-            self.buzzer.stop();
-            self.state = next_state;
-        }
+        let effect = self.model.pause();
+        self.apply(effect);
     }
 
-    /// 下一曲
     pub fn next(&mut self) {
-        let next_pos = self.get_next_pos();
-        self.stop();
-        self.start(next_pos, 0);
+        let effect = self.model.next();
+        self.apply(effect);
     }
 
-    /// 上一曲
     pub fn prev(&mut self) {
-        let prev_pos = self.get_prev_pos();
-        self.stop();
-        self.start(prev_pos, 0);
+        let effect = self.model.prev();
+        self.apply(effect);
     }
+
+    // ── TIMER2 ISR ──
 
     pub fn handle_play_event(&mut self) {
-        defmt::debug!("player::tick {}", self.timer.now());
-        if let State::Play { pos, progress } = self.state {
-            let play_fired = self.timer.check_play();
-            let next_fired = self.timer.check_next();
+        let play_fired = self.timer.check_play();
+        let next_fired = self.timer.check_next();
 
-            if let Some(melody) = self.list.get(pos) {
-                if play_fired {
-                    let buzzer = &self.buzzer;
-                    let timer = &self.timer;
-                    if let Some((tone, delay_ms)) = melody.get(progress) {
-                        // play that note for 90% duration, leaving 10% pause
-                        buzzer.tone(tone, self.volume);
-                        timer.set_play_duration((delay_ms * 1_000).micros());
-                        timer.set_next_duration((delay_ms * 900).micros());
-                    } else {
-                        self.stop();
-                        self.start(pos, 0);
-                    }
-                } else if next_fired {
-                    self.next_tone(pos, progress);
-                }
+        if play_fired {
+            if let Some((tone, delay_ms)) = self.model.on_play_fired() {
+                self.buzzer.tone(tone, self.model.volume());
+                self.timer.set_play_duration((delay_ms * 1_000).micros());
+                self.timer.set_next_duration((delay_ms * 900).micros());
+            } else {
+                // 不应出现（Playing 状态总应有音符）
+                self.buzzer.stop();
+                self.timer.stop();
             }
         }
-    }
 
-    /// 上一曲下标，列表循环
-    fn get_prev_pos(&self) -> usize {
-        let max_pos = self.list.len() - 1;
-        let pos = match self.state {
-            State::Play { pos, .. } => pos,
-            State::Pause { pos, .. } => pos,
-            State::Stop => 0,
-        };
-
-        if pos == 0 {
-            max_pos
-        } else {
-            pos - 1
+        if next_fired {
+            self.model.on_next_fired();
+            self.buzzer.stop();
         }
     }
 
-    /// 获取下一曲下标，列表循环
-    fn get_next_pos(&self) -> usize {
-        let max_pos = self.list.len() - 1;
-        let pos = match self.state {
-            State::Play { pos, .. } => pos,
-            State::Pause { pos, .. } => pos,
-            State::Stop => 0,
-        };
+    // ── 硬件效应汇聚点 ──
 
-        if pos == max_pos {
-            0
-        } else {
-            pos + 1
+    fn apply(&mut self, effect: PlayerEffect) {
+        use PlayerEffect::*;
+        match effect {
+            Start => {
+                self.timer.start();
+                self.timer.set_play_duration(1.secs());
+            }
+            Stop => {
+                self.buzzer.stop();
+                self.timer.stop();
+            }
+            Restart => {
+                self.buzzer.stop();
+                self.timer.stop();
+                self.timer.start();
+                self.timer.set_play_duration(1.secs());
+            }
+            None => {}
         }
-    }
-
-    fn next_tone(&mut self, pos: usize, progress: usize) {
-        self.buzzer.stop();
-        self.state = State::Play {
-            pos,
-            progress: progress + 1,
-        };
-    }
-
-    fn start(&mut self, pos: usize, progress: usize) {
-        self.state = State::Play { pos, progress };
-        self.timer.start();
-        self.timer.set_play_duration(1.secs());
-    }
-
-    fn stop(&mut self) {
-        self.buzzer.stop();
-        self.timer.stop();
-        self.state = State::Stop;
     }
 }
 
 mod inner {
     use super::*;
+    use fugit::{TimerDurationU32, TimerInstantU32};
+
     type Instant = TimerInstantU32<1_000_000>;
     type Duration = TimerDurationU32<1_000_000>;
 
@@ -204,19 +158,12 @@ mod inner {
 
         #[inline(always)]
         fn set_volume(&self, volume: u32) {
-            // 确保音量在0-100范围内
             let volume = volume.clamp(0, 100) as f32;
-
-            // 获取最大占空比
             let max_duty = self.0.max_duty() as f32;
-
-            // 计算目标占空比
             let max_vol = max_duty * 0.5;
             let min_vol = max_duty * 0.2;
             let vol_range = max_vol - min_vol;
             let target_duty = min_vol + (vol_range * (volume / 100.0));
-
-            // 设置PWM占空比
             self.0.set_duty_on(pwm::Channel::C0, target_duty as u16);
         }
     }
