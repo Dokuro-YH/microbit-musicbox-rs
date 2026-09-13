@@ -1,5 +1,5 @@
-use defmt::Format;
 use bsp::hal::time::Hertz;
+use defmt::Format;
 
 macro_rules! tones {
     (

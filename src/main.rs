@@ -13,6 +13,7 @@ nrf_timer0_monotonic!(Mono, TIMER_HZ);
 
 mod accel;
 mod button;
+mod display;
 mod melody;
 mod player;
 mod tone;
@@ -32,9 +33,11 @@ mod app {
 
     use lsm303agr::{AccelMode, AccelOutputDataRate, Lsm303agr};
 
+    use musicbox::display_state::DisplayEvent;
+
     type Accel = accel::Accel<twim::Twim<TWIM0>, TIMER_HZ>;
     type Button = button::Button<Pin<Input<PullUp>>, TIMER_HZ>;
-    type Display = bsp::display::nonblocking::Display<TIMER1>;
+    type Display = display::Display<TIMER1>;
     type Player = player::Player<'static, TIMER2, PWM1>;
 
     const MELODY_LIST: &[melody::Melody] = &[
@@ -146,68 +149,120 @@ mod app {
         )
     }
 
-    #[task(binds = RTC0, local = [rtc0], shared = [accel, btn1, btn2])]
+    #[task(binds = RTC0, local = [rtc0], shared = [accel, btn1, btn2, display])]
     fn rtc0(mut ctx: rtc0::Context) {
         let now = Mono::now();
         ctx.local.rtc0.reset_event(RtcInterrupt::Tick);
         ctx.shared.accel.lock(|accel| accel.tick(&now));
         ctx.shared.btn1.lock(|btn| btn.tick(&now));
         ctx.shared.btn2.lock(|btn| btn.tick(&now));
+        let now_ms = now.duration_since_epoch().ticks() / 1000;
+        ctx.shared.display.lock(|d| d.update(now_ms, None));
     }
 
-    #[task(priority = 1, shared = [player])]
+    #[task(priority = 1, shared = [player, display])]
     async fn handle_shake_event(mut ctx: handle_shake_event::Context) {
-        ctx.shared.player.lock(|ply| {
-            if ply.is_playing() {
+        let was_playing = ctx.shared.player.lock(|ply| {
+            let playing = ply.is_playing();
+            if playing {
                 defmt::info!("music paused");
                 ply.pause();
             } else {
                 defmt::info!("music playing");
                 ply.play_or_resume();
             }
+            playing
+        });
+
+        let now_ms = Mono::now().duration_since_epoch().ticks() / 1000;
+        ctx.shared.display.lock(|d| {
+            if was_playing {
+                d.update(now_ms, Some(DisplayEvent::Paused));
+            } else {
+                d.update(now_ms, Some(DisplayEvent::Playing));
+            }
+            d.update(now_ms, Some(DisplayEvent::Shake));
         });
     }
 
-    #[task(priority = 1, shared = [player])]
+    #[task(priority = 1, shared = [player, display])]
     async fn handle_btn1_event(mut ctx: handle_btn1_event::Context, event: button::Event) {
         use button::Event::*;
 
-        ctx.shared.player.lock(|ply| match event {
+        enum Action {
+            Volume(u8),
+            Prev,
+            None,
+        }
+
+        let action = ctx.shared.player.lock(|ply| match event {
             Click => {
                 defmt::info!("volume - 10");
                 ply.volume_sub(10);
+                Action::Volume(ply.volume() as u8)
             }
             LongPressStart | LongPressDuring | LongPressStop => {
                 defmt::info!("volume - 1");
                 ply.volume_sub(1);
+                Action::Volume(ply.volume() as u8)
             }
             DoubleClick => {
                 defmt::info!("prev music");
                 ply.prev();
+                Action::Prev
             }
-            _ => {}
-        })
+            _ => Action::None,
+        });
+
+        let now_ms = Mono::now().duration_since_epoch().ticks() / 1000;
+        ctx.shared.display.lock(|d| match action {
+            Action::Volume(vol) => d.update(now_ms, Some(DisplayEvent::Volume(vol))),
+            Action::Prev => {
+                d.update(now_ms, Some(DisplayEvent::Playing));
+                d.update(now_ms, Some(DisplayEvent::PreviousTrack));
+            }
+            Action::None => {}
+        });
     }
 
-    #[task(priority = 1, shared = [player])]
+    #[task(priority = 1, shared = [player, display])]
     async fn handle_btn2_event(mut ctx: handle_btn2_event::Context, event: button::Event) {
         use button::Event::*;
 
-        ctx.shared.player.lock(|ply| match event {
+        enum Action {
+            Volume(u8),
+            Next,
+            None,
+        }
+
+        let action = ctx.shared.player.lock(|ply| match event {
             Click => {
                 defmt::info!("volume + 10");
                 ply.volume_add(10);
+                Action::Volume(ply.volume() as u8)
             }
             LongPressStart | LongPressDuring | LongPressStop => {
                 defmt::info!("volume + 1");
                 ply.volume_add(1);
+                Action::Volume(ply.volume() as u8)
             }
             DoubleClick => {
                 defmt::info!("next music");
                 ply.next();
+                Action::Next
             }
-            _ => {}
-        })
+            _ => Action::None,
+        });
+
+        let now_ms = Mono::now().duration_since_epoch().ticks() / 1000;
+        ctx.shared.display.lock(|d| match action {
+            Action::Volume(vol) => d.update(now_ms, Some(DisplayEvent::Volume(vol))),
+            Action::Next => {
+                d.update(now_ms, Some(DisplayEvent::Playing));
+                d.update(now_ms, Some(DisplayEvent::NextTrack));
+            }
+            Action::None => {}
+        });
     }
 
     #[task(binds = TIMER1, shared = [display])]

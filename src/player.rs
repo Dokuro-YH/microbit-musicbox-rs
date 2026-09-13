@@ -116,7 +116,7 @@ impl<'a, T: timer::Instance, P: pwm::Instance> Player<'a, T, P> {
             }
         }
     }
-    
+
     /// 上一曲下标，列表循环
     fn get_prev_pos(&self) -> usize {
         let max_pos = self.list.len() - 1;
