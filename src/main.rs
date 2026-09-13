@@ -31,18 +31,18 @@ mod app {
 
     use lsm303agr::{AccelMode, AccelOutputDataRate, Lsm303agr};
 
-    use musicbox::display_state::DisplayEvent;
+    use musicbox::core::display::DisplayEvent;
 
     type Accel = accel::Accel<twim::Twim<TWIM0>, TIMER_HZ>;
     type Button = button::Button<Pin<Input<PullUp>>, TIMER_HZ>;
     type Display = display::Display<TIMER1>;
     type Player = player::Player<'static, TIMER2, PWM1>;
 
-    const MELODY_LIST: &[musicbox::melody::Melody] = &[
-        musicbox::melody::SUPER_MARIOBROS,
-        musicbox::melody::GAME_OF_THRONES,
-        musicbox::melody::MERRY_CHRISTMAS,
-        musicbox::melody::HAPPY_BIRTHDAY,
+    const MELODY_LIST: &[musicbox::core::melody::Melody] = &[
+        musicbox::core::melody::SUPER_MARIOBROS,
+        musicbox::core::melody::GAME_OF_THRONES,
+        musicbox::core::melody::MERRY_CHRISTMAS,
+        musicbox::core::melody::HAPPY_BIRTHDAY,
     ];
 
     #[shared]

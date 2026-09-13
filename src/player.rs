@@ -5,9 +5,9 @@ use bsp::hal::{
 use fugit::ExtU32;
 
 use musicbox::{
-    melody::Melody,
-    player_core::{PlayerEffect, PlayerModel},
-    tone::Tone,
+    core::melody::Melody,
+    core::player::{PlayerEffect, PlayerModel},
+    core::tone::Tone,
 };
 
 use self::inner::{PlayerBuzzer, PlayerTimer};

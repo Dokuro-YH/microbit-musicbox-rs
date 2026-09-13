@@ -1,5 +1,5 @@
-use crate::melody::Melody;
-use crate::tone::Tone;
+use crate::core::melody::Melody;
+use crate::core::tone::Tone;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayerState {

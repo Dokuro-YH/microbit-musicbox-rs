@@ -4,7 +4,7 @@ use microbit::{
     hal::timer,
 };
 
-use musicbox::display_state::{DisplayCommand, DisplayEvent, DisplayModel, Icon};
+use musicbox::core::display::{DisplayCommand, DisplayEvent, DisplayModel, Icon};
 
 /// LED 亮度
 const BRIGHT: u8 = 7;

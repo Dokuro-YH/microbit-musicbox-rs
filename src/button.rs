@@ -3,8 +3,8 @@ use core::fmt::Debug;
 use embedded_hal::digital::InputPin;
 use fugit::TimerDurationU64;
 
-use musicbox::button_detector::ButtonDetector;
-pub use musicbox::button_detector::ButtonEvent as Event;
+use musicbox::core::button::ButtonDetector;
+pub use musicbox::core::button::ButtonEvent as Event;
 
 /// Imperative Shell：负责 GPIO 读取、时间转换和回调调度。
 /// 按钮检测的核心状态机委托给功能核心 [`ButtonDetector`]。

@@ -1,4 +1,4 @@
-use crate::tone::Tone;
+use crate::core::tone::Tone;
 
 #[cfg_attr(target_os = "none", derive(defmt::Format))]
 #[derive(Debug)]

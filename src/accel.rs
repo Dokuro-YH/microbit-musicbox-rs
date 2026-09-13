@@ -2,7 +2,7 @@ use lsm303agr::interface::I2cInterface;
 use lsm303agr::mode::MagOneShot;
 use lsm303agr::{Acceleration, Lsm303agr};
 
-use musicbox::shake_detector::ShakeDetector;
+use musicbox::core::shake::ShakeDetector;
 
 /// Imperative Shell：负责传感器 I/O 读取、时间转换和回调调度。
 /// 摇动检测的核心状态机委托给功能核心 [`ShakeDetector`]。
